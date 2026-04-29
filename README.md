@@ -1,5 +1,7 @@
 # raydium-cpmm-arb-monitor
 
+![Arbitrage Monitor Screenshot](Знімок%20екрана%202026-04-29%20235539.png)
+
 A real-time arbitrage monitoring tool for [Raydium CPMM](https://docs.raydium.io/raydium/build/developer-guides/cpmm) pools on Solana.
 
 Given two SPL token mint addresses, the tool discovers every CPMM pool that trades that pair, continuously fetches live reserves, computes spot prices, simulates a 2-leg buy/sell against every candidate pool combination, and surfaces a ranked, live-updating list of profitable arbitrage opportunities — net of swap fees and transaction costs.
