@@ -20,8 +20,11 @@ Given two SPL token mint addresses, the tool discovers every CPMM pool that trad
 - [Usage Examples](#usage-examples)
 - [How Prices Are Calculated](#how-prices-are-calculated)
 - [How Net Profit Is Calculated](#how-net-profit-is-calculated)
+- [Optimal Trade Size](#optimal-trade-size)
+- [Price Impact Detection](#price-impact-detection)
 - [Logging & Observability](#logging--observability)
 - [Project Layout](#project-layout)
+- [Running Tests](#running-tests)
 - [Limitations & Notes](#limitations--notes)
 - [Contributing](#contributing)
 - [License](#license)
@@ -31,12 +34,15 @@ Given two SPL token mint addresses, the tool discovers every CPMM pool that trad
 ## Features
 
 - **Pool discovery**: given two mint addresses, discovers every CPMM pool for that token pair via on-chain `getProgramAccounts` with memcmp filters on the pool state layout.
-- **Real-time prices**: continuously polls token vault balances and recomputes spot prices on a configurable interval.
+- **Real-time prices**: continuously polls token vault balances and recomputes spot prices on a configurable interval. Liquidity health (LOW / OK) flagged per pool.
 - **Per-pool fee awareness**: reads each pool's `AmmConfig` and applies the correct trade fee tier (0.25%, 1%, 2%, 4%, or any future tier) when simulating swaps.
 - **Net profit simulation**: simulates a full 2-leg arbitrage (buy in pool X, sell in pool Y) using the constant-product formula with fees, including a configurable transaction-cost deduction.
+- **Optimal trade size**: ternary search finds the profit-maximizing input amount for each candidate pool pair — shown alongside your configured `TRADE_AMOUNT`.
+- **Price impact detection**: warns when `TRADE_AMOUNT` exceeds 10% of the buy pool's reserve, preventing misleading profit estimates on thin pools.
 - **Ranked output**: opportunities sorted by net profit. Color-coded: above-threshold (green), positive but below threshold (yellow), break-even or worse (gray).
-- **Structured logging**: every pool discovery, price update, opportunity, and error is logged as JSON to a file with timestamps and log levels.
+- **Structured logging**: pool discovery, per-tick price snapshots, every arb candidate (debug), above-threshold alerts (warn), and errors — all JSON with timestamps.
 - **Configurable**: RPC endpoint, polling interval, trade size, minimum profit threshold, transaction cost, and log level all configurable via `.env`.
+- **`--help` flag**: `node dist/index.js --help` prints full usage with common mint pairs and configuration reference.
 
 ---
 
@@ -181,31 +187,38 @@ npm run dev -- \
 Sample output (truncated):
 
 ```
-  Raydium CPMM Arbitrage Monitor   v0.1.0  iteration #4  uptime 18s
+  Raydium CPMM Arbitrage Monitor   v0.1.0  iteration #4  uptime 18s  scan 312ms
   Pair: So11…1112 / EPjF…Dt1v   Pools: 3   Updated: 2026-04-29 14:02:11
   Polling: 5000ms   Trade size: 1   Min profit: 0.0001
   RPC: https://mainnet.helius-rpc.com/?api-key=***
 
   Pool Prices
-  ┌──────────┬──────────────────────┬───────────┬────────────┬────────┐
-  │ Pool     │ Spot Price (B per A) │ Reserve A │ Reserve B  │ Fee    │
-  ├──────────┼──────────────────────┼───────────┼────────────┼────────┤
-  │ 3xAb…7yZ │           134.812341 │   1820.20 │ 245412.18  │ 0.250% │
-  │ 9mNp…2qW │           134.998120 │    430.55 │  58127.90  │ 1.000% │
-  │ 7Yba…4dF │           135.103045 │   2110.71 │ 285178.55  │ 0.250% │
-  └──────────┴──────────────────────┴───────────┴────────────┴────────┘
+  ┌──────────┬──────────────────────┬───────────┬────────────┬──────┬────────┐
+  │ Pool     │ Spot Price (B per A) │ Reserve A │ Reserve B  │ Liq. │ Fee    │
+  ├──────────┼──────────────────────┼───────────┼────────────┼──────┼────────┤
+  │ 3xAb…7yZ │           134.812341 │   1820.20 │ 245412.18  │ OK   │ 0.250% │
+  │ 9mNp…2qW │           134.998120 │    430.55 │  58127.90  │ OK   │ 1.000% │
+  │ 7Yba…4dF │           135.103045 │   2110.71 │ 285178.55  │ OK   │ 0.250% │
+  └──────────┴──────────────────────┴───────────┴────────────┴──────┴────────┘
 
   Arbitrage Opportunities (ranked by net profit)
-  ┌───┬──────────┬──────────┬───────────┬───────────┬─────────┬───────────────┬────────────┬───────────────┐
-  │ # │ Buy Pool │ Sell Pool│ Buy Price │ Sell Price│ Diff %  │ Gross         │ Tx Cost    │ Net Profit    │
-  ├───┼──────────┼──────────┼───────────┼───────────┼─────────┼───────────────┼────────────┼───────────────┤
-  │ 1 │ 3xAb…7yZ │ 7Yba…4dF │ 134.81234 │ 135.10305 │ 0.2156% │ +0.00091234   │ 0.00001000 │ +0.00090234   │
-  │ 2 │ 3xAb…7yZ │ 9mNp…2qW │ 134.81234 │ 134.99812 │ 0.1378% │ +0.00040118   │ 0.00001000 │ +0.00039118   │
-  └───┴──────────┴──────────┴───────────┴───────────┴─────────┴───────────────┴────────────┴───────────────┘
+  ┌───┬──────────┬──────────┬──────────┬────────┬──────────────┬──────────────┬────────────────┐
+  │ # │ Buy Pool │ Sell Pool│ Spread % │ Impact │ Net Profit   │ Optimal Size │ Optimal Profit │
+  ├───┼──────────┼──────────┼──────────┼────────┼──────────────┼──────────────┼────────────────┤
+  │ 1 │ 3xAb…7yZ │ 7Yba…4dF │  0.2156% │  0.1%  │ +0.00090234  │ 3.8120       │ +0.00341200    │
+  │ 2 │ 3xAb…7yZ │ 9mNp…2qW │  0.1378% │  0.1%  │ +0.00039118  │ 1.9240       │ +0.00082340    │
+  └───┴──────────┴──────────┴──────────┴────────┴──────────────┴──────────────┴────────────────┘
   2 opportunities found, 2 above threshold (0.0001)
 
   Ctrl+C to exit. Logs streamed to file (see LOG_FILE).
 ```
+
+**Column guide:**
+- **Spread %** — price spread between buy pool and sell pool (positive = profitable direction)
+- **Impact** — price impact of `TRADE_AMOUNT` on buy pool reserves; ⚠ appears above 10%
+- **Net Profit** — profit after swap fees and tx cost, at configured `TRADE_AMOUNT`
+- **Optimal Size** — profit-maximizing input amount found by ternary search
+- **Optimal Profit** — net profit at the optimal size (cyan)
 
 ### Example 2 — Run with custom config inline
 
@@ -308,6 +321,44 @@ Try pairs like `POPCAT/SOL`, `WIF/SOL`, or newly-launched tokens where CPMM pool
 
 ---
 
+## Optimal Trade Size
+
+For each profitable pool pair `(buyPool, sellPool)`, the tool finds the input amount `x` that maximizes net profit using **ternary search** (40 iterations over `[0, 30% of the smaller pool's reserve]`).
+
+The profit function is:
+
+```
+f(x) = amountOut_leg2(amountOut_leg1(x)) - x - tx_cost
+```
+
+This is concave (diminishing returns from price impact), so ternary search converges to the global maximum. The search runs in O(log N) with 40 iterations, adding negligible overhead to each tick.
+
+The **Optimal Size** and **Optimal Profit** columns show:
+- **Optimal Size** — the profit-maximizing input amount in tokenA units
+- **Optimal Profit** — net profit at that size (after both fees and tx cost)
+
+If `Optimal Profit` is significantly larger than `Net Profit`, it means your configured `TRADE_AMOUNT` is suboptimal for that pair — you should increase it (check the Impact column first to ensure it won't cause excessive slippage).
+
+---
+
+## Price Impact Detection
+
+Price impact measures how much a swap moves the pool price against you:
+
+```
+priceImpactPct = (TRADE_AMOUNT / pool.reserveA) × 100
+```
+
+When `priceImpactPct > 10%`, the opportunity is flagged with a red `⚠` in the **Impact** column. This matters because:
+
+- High impact = large slippage on leg 1 → less tokenB received → reduced gross profit
+- Simulated profit at high impact may still be positive, but real execution risk increases
+- Very thin pools (LOW liquidity flag) often have inflated spot prices that don't reflect executable rates
+
+**Rule of thumb:** aim for `Impact < 5%` for reliable execution.
+
+---
+
 ## Logging & Observability
 
 [Winston](https://github.com/winstonjs/winston) is configured with two transports:
@@ -317,12 +368,32 @@ Try pairs like `POPCAT/SOL`, `WIF/SOL`, or newly-launched tokens where CPMM pool
 
 Levels:
 
-| Level   | What gets logged                                                                  |
-| ------- | --------------------------------------------------------------------------------- |
-| `error` | RPC failures, decode errors, fatal startup errors.                                |
-| `warn`  | Arbitrage opportunities above threshold; missing accounts; degraded pool states.  |
-| `info`  | Startup, pool discovery completion, shutdown.                                     |
-| `debug` | Per-pool decode results, per-tick durations, individual price snapshots.          |
+| Level   | What gets logged                                                                                      |
+| ------- | ----------------------------------------------------------------------------------------------------- |
+| `error` | RPC failures, decode errors, fatal startup errors.                                                    |
+| `warn`  | Arbitrage opportunities above `MIN_PROFIT_THRESHOLD`; missing accounts; degraded pool states.         |
+| `info`  | Startup params, pool discovery results, per-tick price snapshot with all pool prices and opportunity count. |
+| `debug` | Per-pool decode details, every arb candidate with spread/impact/optimal-size, AmmConfig values.       |
+
+Sample `info`-level tick log entry (one per polling interval):
+
+```json
+{
+  "level": "info",
+  "message": "Price update",
+  "iteration": 4,
+  "durationMs": 312,
+  "pools": 3,
+  "prices": [
+    { "pool": "3xAb…7yZ", "spotPrice": 134.81234100, "reserveA": 1820.2000, "feePercent": "0.250" },
+    { "pool": "9mNp…2qW", "spotPrice": 134.99812000, "reserveA": 430.5500,  "feePercent": "1.000" },
+    { "pool": "7Yba…4dF", "spotPrice": 135.10304500, "reserveA": 2110.7100, "feePercent": "0.250" }
+  ],
+  "opportunitiesFound": 2,
+  "aboveThreshold": 2,
+  "timestamp": "2026-04-29T14:02:11.110Z"
+}
+```
 
 Each log entry includes structured metadata: pool IDs, prices, profit values, durations, error messages. There is no string interpolation in log payloads — everything is queryable JSON.
 
@@ -353,6 +424,30 @@ Each module has a single, narrow responsibility. Discovery is purely on-chain ac
 
 ---
 
+## Running Tests
+
+Unit tests cover the core swap simulation math, profit ranking, optimal trade size search, and price impact detection — all without any network calls.
+
+```bash
+npm test
+```
+
+Expected output:
+
+```
+Test Suites: 2 passed, 2 total
+Tests:       13 passed, 13 total
+```
+
+**Test files:**
+
+| File | What it tests |
+| --- | --- |
+| `tests/swap.test.ts` | Constant-product swap math, profit ranking, tx cost deduction, threshold flagging |
+| `tests/optimal.test.ts` | Ternary-search optimal size, price impact percentage, HIGH impact flag |
+
+---
+
 ## Limitations & Notes
 
 - **Read-only.** This tool does **not** sign or send transactions. It is a monitor.
@@ -371,11 +466,11 @@ Contributions welcome. Open a PR.
 Suggested improvements:
 
 - Add CLMM and AMM v4 pool support behind feature flags.
-- WebSocket-based reserve subscription instead of polling.
+- WebSocket-based reserve subscription instead of polling (lower latency than polling).
 - Multi-hop arbitrage path search (currently only 2-leg).
-- Optional Jupiter / Birdeye price comparison column.
+- Optional Jupiter / Birdeye price comparison column to cross-check spot prices.
 - Telegram / Discord webhook alerts on threshold breach.
-- Tests for the swap simulator using fixture pool states.
+- Tx cost in non-SOL tokenA units (currently only deducted for WSOL pairs).
 
 ---
 
