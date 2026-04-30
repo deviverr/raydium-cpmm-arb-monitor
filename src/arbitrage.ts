@@ -6,7 +6,7 @@ import { bnToNumber, shortAddr } from './price';
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
 const HIGH_IMPACT_THRESHOLD = 0.1; // warn if trade > 10% of buy-pool reserve
-const OPTIMAL_SEARCH_STEPS = 40;   // binary search iterations
+const OPTIMAL_SEARCH_STEPS = 40;   // ternary search iterations
 
 export interface ArbInput {
   reserves: PoolReserves[];
@@ -14,19 +14,26 @@ export interface ArbInput {
   txCostLamports: number;
   mintA: PublicKey;
   minProfitThreshold: number;
+  minReserveA: number;
 }
 
 export function computeArbOpportunities(input: ArbInput): ArbOpportunity[] {
-  const { reserves, tradeAmount, txCostLamports, mintA, minProfitThreshold } = input;
+  const { reserves, tradeAmount, txCostLamports, mintA, minProfitThreshold, minReserveA } = input;
 
   const txCostInInputToken = mintA.toBase58() === WSOL_MINT ? txCostLamports / 1e9 : 0;
+
+  // Filter out dust pools from arb simulation — they produce garbage profit estimates.
+  const eligible = reserves.filter(
+    (r) => bnToNumber(r.reserveA, r.mintADecimals) >= minReserveA
+  );
+
   const opps: ArbOpportunity[] = [];
 
-  for (let i = 0; i < reserves.length; i++) {
-    for (let j = 0; j < reserves.length; j++) {
+  for (let i = 0; i < eligible.length; i++) {
+    for (let j = 0; j < eligible.length; j++) {
       if (i === j) continue;
-      const buy = reserves[i];
-      const sell = reserves[j];
+      const buy = eligible[i];
+      const sell = eligible[j];
 
       const opp = simulateArb(buy, sell, tradeAmount, txCostInInputToken);
       if (opp.grossProfit <= 0) continue;
@@ -88,7 +95,7 @@ function simulateArb(
   const priceImpactPct = buyResA > 0 ? (tradeAmountInputToken / buyResA) * 100 : 0;
   const highImpactWarning = priceImpactPct > HIGH_IMPACT_THRESHOLD * 100;
 
-  // Optimal trade size: binary search for argmax(netProfit) over [0, 30% of buy reserve]
+  // Optimal trade size: ternary search for argmax(netProfit) over [0, 30% of min reserve]
   const maxSearch = Math.min(buyResA, sellResA) * 0.3;
   const { optimalAmount, optimalProfit } = findOptimalTradeSize(
     buyResA, buyResB, sellResA, sellResB,
@@ -145,7 +152,7 @@ function findOptimalTradeSize(
 ): { optimalAmount: number; optimalProfit: number } {
   if (maxSize <= 0) return { optimalAmount: 0, optimalProfit: 0 };
 
-  // Ternary search on a unimodal concave profit function
+  // Ternary search on a concave profit function
   let lo = 0;
   let hi = maxSize;
   for (let i = 0; i < OPTIMAL_SEARCH_STEPS; i++) {

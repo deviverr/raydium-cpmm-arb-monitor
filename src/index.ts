@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Suppress native-binding load warnings (e.g. bigint-buffer fallback) before any imports.
+process.env['NODE_NO_WARNINGS'] = '1';
+
 import { Connection } from '@solana/web3.js';
 import { loadConfig, parseMintArgs } from './config';
 import { initLogger, getLogger, silenceConsole, unsilenceConsole } from './logger';
@@ -7,62 +10,75 @@ import { fetchPoolReserves, reservesToSnapshots } from './price';
 import { computeArbOpportunities } from './arbitrage';
 import { render, clearScreen } from './display';
 import { MonitorContext, PriceSnapshot, ArbOpportunity } from './types';
+import { getDemoReserves, getDemoContext } from './demo';
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const args = parseMintArgs(process.argv.slice(2));
+  const config = loadConfig(args.demo);
+
   const logger = initLogger({ level: config.logLevel, file: config.logFile });
 
-  logger.info('raydium-cpmm-arb-monitor starting', {
-    rpcEndpoint: redactRpc(config.rpcEndpoint),
-    pollingIntervalMs: config.pollingIntervalMs,
-    minProfitThreshold: config.minProfitThreshold,
-    tradeAmount: config.tradeAmount,
-    txCostLamports: config.txCostLamports,
-    logLevel: config.logLevel,
-    logFile: config.logFile,
-  });
-
-  let mints;
-  try {
-    mints = parseMintArgs(process.argv.slice(2));
-  } catch (e) {
-    logger.error((e as Error).message);
-    process.exit(1);
+  if (args.demo) {
+    logger.info('raydium-cpmm-arb-monitor starting in demo mode', {
+      pollingIntervalMs: config.pollingIntervalMs,
+      tradeAmount: config.tradeAmount,
+      minReserveA: config.minReserveA,
+    });
+  } else {
+    logger.info('raydium-cpmm-arb-monitor starting', {
+      rpcEndpoint: redactRpc(config.rpcEndpoint),
+      pollingIntervalMs: config.pollingIntervalMs,
+      minProfitThreshold: config.minProfitThreshold,
+      tradeAmount: config.tradeAmount,
+      txCostLamports: config.txCostLamports,
+      minReserveA: config.minReserveA,
+      logLevel: config.logLevel,
+      logFile: config.logFile,
+    });
   }
 
-  const connection = new Connection(config.rpcEndpoint, 'confirmed');
+  let ctx: MonitorContext;
+  let demoReserves: ReturnType<typeof getDemoReserves> | null = null;
 
-  let pools;
-  try {
-    pools = await discoverPools(connection, mints.mintA, mints.mintB);
-  } catch (e) {
-    logger.error('Pool discovery failed', { error: (e as Error).message });
-    process.exit(1);
+  if (args.demo) {
+    ctx = getDemoContext();
+    demoReserves = getDemoReserves();
+    logger.info('Demo pools loaded', { pools: ctx.pools.length });
+  } else {
+    const connection = new Connection(config.rpcEndpoint, 'confirmed');
+
+    let pools;
+    try {
+      pools = await discoverPools(connection, args.mintA, args.mintB);
+    } catch (e) {
+      logger.error('Pool discovery failed', { error: (e as Error).message });
+      process.exit(1);
+    }
+
+    if (pools.length < 2) {
+      logger.warn(
+        `Found only ${pools.length} pool(s). At least 2 pools required for arbitrage. Continuing — display will show pool prices.`
+      );
+    }
+
+    const configs = await fetchAmmConfigs(connection, pools);
+
+    ctx = {
+      mintA: args.mintA,
+      mintB: args.mintB,
+      pools,
+      configs,
+      startedAt: Date.now(),
+      iteration: 0,
+      demo: false,
+    };
   }
-
-  if (pools.length < 2) {
-    logger.warn(
-      `Found only ${pools.length} pool(s). At least 2 pools are required for arbitrage. Continuing anyway — display will show pool prices.`
-    );
-  }
-
-  const configs = await fetchAmmConfigs(connection, pools);
-
-  const ctx: MonitorContext = {
-    mintA: mints.mintA,
-    mintB: mints.mintB,
-    pools,
-    configs,
-    startedAt: Date.now(),
-    iteration: 0,
-  };
 
   let lastPrices: PriceSnapshot[] = [];
   let lastOpps: ArbOpportunity[] = [];
   let lastTickMs = 0;
   let lastError: string | undefined;
 
-  // Switch console logger off; the TUI owns stdout from here on.
   silenceConsole();
 
   const handleShutdown = (signal: string) => {
@@ -74,27 +90,33 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => handleShutdown('SIGINT'));
   process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
+  const connection = args.demo ? null : new Connection(config.rpcEndpoint, 'confirmed');
+
   const tick = async (): Promise<void> => {
     ctx.iteration += 1;
     const startedTick = Date.now();
     try {
-      const reserves = await fetchPoolReserves(connection, pools, configs);
-      lastPrices = reservesToSnapshots(reserves);
+      const reserves = args.demo
+        ? demoReserves!
+        : await fetchPoolReserves(connection!, ctx.pools, ctx.configs);
+
+      lastPrices = reservesToSnapshots(reserves, config.minReserveA);
 
       lastOpps = computeArbOpportunities({
         reserves,
         tradeAmount: config.tradeAmount,
         txCostLamports: config.txCostLamports,
-        mintA: mints.mintA,
+        mintA: args.mintA,
         minProfitThreshold: config.minProfitThreshold,
+        minReserveA: config.minReserveA,
       });
 
       const profitable = lastOpps.filter((o) => o.meetsThreshold);
       lastTickMs = Date.now() - startedTick;
-      const tickMs = lastTickMs;
+
       logger.info('Price update', {
         iteration: ctx.iteration,
-        durationMs: tickMs,
+        durationMs: lastTickMs,
         pools: lastPrices.length,
         prices: lastPrices.map((p) => ({
           pool: p.poolIdShort,
@@ -102,6 +124,7 @@ async function main(): Promise<void> {
           reserveA: Number(p.reserveA.toFixed(4)),
           reserveB: Number(p.reserveB.toFixed(4)),
           feePercent: p.feeRatePercent.toFixed(3),
+          excludedFromArb: p.excludedFromArb,
         })),
         opportunitiesFound: lastOpps.length,
         aboveThreshold: profitable.length,
@@ -126,10 +149,9 @@ async function main(): Promise<void> {
           rank: top.rank,
           buyPool: top.buyPool,
           sellPool: top.sellPool,
-          buyPrice: top.buyPrice,
-          sellPrice: top.sellPrice,
           priceDiffPercent: top.priceDiffPercent,
           netProfit: top.netProfit,
+          optimalNetProfit: top.optimalNetProfit,
           tradeAmount: top.tradeAmount,
         });
       }
@@ -143,10 +165,11 @@ async function main(): Promise<void> {
       ctx,
       prices: lastPrices,
       opportunities: lastOpps,
-      rpcEndpoint: redactRpc(config.rpcEndpoint),
+      rpcEndpoint: args.demo ? 'demo' : redactRpc(config.rpcEndpoint),
       pollingIntervalMs: config.pollingIntervalMs,
       tradeAmount: config.tradeAmount,
       minProfitThreshold: config.minProfitThreshold,
+      minReserveA: config.minReserveA,
       lastUpdate: Date.now(),
       tickMs: lastTickMs,
       errorMsg: lastError,
@@ -170,7 +193,6 @@ function redactRpc(url: string): string {
 }
 
 main().catch((e) => {
-  // Logger may not be ready; print and exit.
   console.error('Fatal error:', e);
   process.exit(1);
 });

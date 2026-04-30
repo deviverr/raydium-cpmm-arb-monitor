@@ -1,5 +1,7 @@
 import * as dotenv from 'dotenv';
 import { PublicKey } from '@solana/web3.js';
+import { ParsedArgs } from './types';
+import { DEMO_MINT_A, DEMO_MINT_B } from './demo';
 
 dotenv.config();
 
@@ -9,8 +11,10 @@ export interface AppConfig {
   minProfitThreshold: number;
   tradeAmount: number;
   txCostLamports: number;
+  minReserveA: number;
   logLevel: string;
   logFile: string;
+  demo: boolean;
 }
 
 export const RAYDIUM_CPMM_PROGRAM_ID = new PublicKey(
@@ -35,18 +39,20 @@ function envNumber(key: string, defaultValue: number): number {
   return n;
 }
 
-export function loadConfig(): AppConfig {
+export function loadConfig(demo: boolean = false): AppConfig {
   const cfg: AppConfig = {
-    rpcEndpoint: requireEnv('RPC_ENDPOINT'),
+    rpcEndpoint: demo ? 'demo' : requireEnv('RPC_ENDPOINT'),
     pollingIntervalMs: envNumber('POLLING_INTERVAL_MS', 5000),
     minProfitThreshold: envNumber('MIN_PROFIT_THRESHOLD', 0.0001),
     tradeAmount: envNumber('TRADE_AMOUNT', 1),
     txCostLamports: envNumber('TX_COST_LAMPORTS', 10000),
+    minReserveA: envNumber('MIN_RESERVE_A', 0.5),
     logLevel: process.env.LOG_LEVEL?.trim() || 'info',
     logFile: process.env.LOG_FILE?.trim() || 'arb-monitor.log',
+    demo,
   };
 
-  if (cfg.pollingIntervalMs < 500) {
+  if (!demo && cfg.pollingIntervalMs < 500) {
     throw new Error('POLLING_INTERVAL_MS must be >= 500 to avoid RPC rate limits');
   }
   if (cfg.tradeAmount <= 0) {
@@ -56,10 +62,14 @@ export function loadConfig(): AppConfig {
   return cfg;
 }
 
-export function parseMintArgs(argv: string[]): { mintA: PublicKey; mintB: PublicKey } {
+export function parseMintArgs(argv: string[]): ParsedArgs {
   if (argv.includes('--help') || argv.includes('-h')) {
     printHelp();
     process.exit(0);
+  }
+
+  if (argv.includes('--demo') || argv[0] === '--demo') {
+    return { mintA: DEMO_MINT_A, mintB: DEMO_MINT_B, demo: true };
   }
 
   if (argv.length < 2) {
@@ -71,6 +81,7 @@ export function parseMintArgs(argv: string[]): { mintA: PublicKey; mintB: Public
     return {
       mintA: new PublicKey(argv[0]),
       mintB: new PublicKey(argv[1]),
+      demo: false,
     };
   } catch (e) {
     console.error(`Error: invalid mint address — ${(e as Error).message}\n`);
@@ -85,7 +96,9 @@ raydium-cpmm-arb-monitor  v0.1.0
 Real-time arbitrage monitoring tool for Raydium CPMM pools on Solana.
 
 Usage:
-  npm run dev -- <mintA> <mintB>
+  npm run dev -- --demo            Run with synthetic data (no RPC key needed)
+  npm run dev -- <mintA> <mintB>   Monitor a live token pair
+  node dist/index.js --demo
   node dist/index.js <mintA> <mintB>
   node dist/index.js --help
 
@@ -112,6 +125,7 @@ Configuration (.env):
   MIN_PROFIT_THRESHOLD   Min net profit to flag green  [default: 0.0001]
   TRADE_AMOUNT           Notional trade size in mintA units  [default: 1]
   TX_COST_LAMPORTS       Estimated 2-leg arb tx cost in lamports  [default: 10000]
+  MIN_RESERVE_A          Pools with reserveA below this are excluded from arb  [default: 0.5]
   LOG_LEVEL              info | warn | error | debug  [default: info]
   LOG_FILE               Log file path  [default: arb-monitor.log]
 

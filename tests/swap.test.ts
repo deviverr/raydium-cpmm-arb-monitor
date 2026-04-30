@@ -44,6 +44,7 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 10_000,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     expect(result).toHaveLength(0);
   });
@@ -59,6 +60,7 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 10_000,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     // Same price ratio → gross profit ≤ 0 after fees → no opportunities returned
     const profitable = result.filter((o) => o.grossProfit > 0);
@@ -79,6 +81,7 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 10_000,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     expect(result.length).toBeGreaterThan(0);
 
@@ -102,6 +105,7 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 10_000,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     for (let i = 1; i < result.length; i++) {
       expect(result[i - 1].netProfit).toBeGreaterThanOrEqual(result[i].netProfit);
@@ -119,6 +123,7 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 10_000,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     const noCost = computeArbOpportunities({
       reserves,
@@ -126,6 +131,7 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     if (withCost.length > 0 && noCost.length > 0) {
       const expectedDiff = 10_000 / 1e9;
@@ -145,6 +151,7 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: threshold,
+      minReserveA: 0,
     });
     for (const o of result) {
       expect(o.meetsThreshold).toBe(o.netProfit >= threshold);
@@ -162,7 +169,35 @@ describe('computeArbOpportunities', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     result.forEach((o, i) => expect(o.rank).toBe(i + 1));
+  });
+
+  it('excludes dust pools from arb when minReserveA set', () => {
+    const reserves = [
+      makeReserves(POOL_A, 1000, 130_000, 2500), // large pool — eligible
+      makeReserves(POOL_B,  0.1,      13, 2500), // dust pool — excluded
+    ];
+    const withFilter = computeArbOpportunities({
+      reserves,
+      tradeAmount: 1,
+      txCostLamports: 0,
+      mintA: WSOL,
+      minProfitThreshold: 0,
+      minReserveA: 0.5, // dust pool below threshold
+    });
+    const withoutFilter = computeArbOpportunities({
+      reserves,
+      tradeAmount: 1,
+      txCostLamports: 0,
+      mintA: WSOL,
+      minProfitThreshold: 0,
+      minReserveA: 0,
+    });
+    // With filter: only 1 eligible pool → no pairs → no opportunities
+    expect(withFilter).toHaveLength(0);
+    // Without filter: both pools eligible → may find opportunities
+    expect(withoutFilter.length).toBeGreaterThanOrEqual(0);
   });
 });

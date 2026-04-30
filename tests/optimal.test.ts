@@ -42,6 +42,7 @@ describe('optimal trade size', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     if (result.length > 0) {
       const top = result[0];
@@ -60,6 +61,7 @@ describe('optimal trade size', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     // No profitable opps → result should be empty (grossProfit <= 0 filtered)
     expect(result).toHaveLength(0);
@@ -76,6 +78,7 @@ describe('optimal trade size', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     if (result.length > 0) {
       expect(result[0].optimalTradeAmount).toBeGreaterThan(0);
@@ -95,6 +98,7 @@ describe('price impact detection', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     if (result.length > 0) {
       const top = result[0];
@@ -116,6 +120,7 @@ describe('price impact detection', () => {
       txCostLamports: 0,
       mintA: WSOL,
       minProfitThreshold: 0,
+      minReserveA: 0,
     });
     if (result.length > 0) {
       // 1 SOL in 100k pool = 0.001% impact
@@ -131,9 +136,11 @@ describe('price impact detection', () => {
     ];
     const small = computeArbOpportunities({
       reserves, tradeAmount: 1, txCostLamports: 0, mintA: WSOL, minProfitThreshold: 0,
+      minReserveA: 0,
     });
     const large = computeArbOpportunities({
       reserves, tradeAmount: 10, txCostLamports: 0, mintA: WSOL, minProfitThreshold: 0,
+      minReserveA: 0,
     });
     if (small.length > 0 && large.length > 0) {
       expect(large[0].priceImpactPct).toBeGreaterThan(small[0].priceImpactPct);

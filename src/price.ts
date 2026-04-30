@@ -82,18 +82,20 @@ export function bnToNumber(bn: BN, decimals: number): number {
   return Number(bn.toString()) / divisor;
 }
 
-export function reservesToSnapshots(reserves: PoolReserves[]): PriceSnapshot[] {
+export function reservesToSnapshots(reserves: PoolReserves[], minReserveA = 0): PriceSnapshot[] {
   const now = Date.now();
   return reserves.map((r) => {
     const id = r.poolId.toBase58();
+    const resA = bnToNumber(r.reserveA, r.mintADecimals);
     return {
       poolId: id,
       poolIdShort: shortAddr(id),
       spotPrice: computeSpotPrice(r),
-      reserveA: bnToNumber(r.reserveA, r.mintADecimals),
+      reserveA: resA,
       reserveB: bnToNumber(r.reserveB, r.mintBDecimals),
       feeRatePercent: feeRateToPercent(r.tradeFeeRate),
       timestamp: now,
+      excludedFromArb: resA < minReserveA,
     };
   });
 }

@@ -10,6 +10,7 @@ export interface RenderInput {
   pollingIntervalMs: number;
   tradeAmount: number;
   minProfitThreshold: number;
+  minReserveA: number;
   lastUpdate: number;
   tickMs: number;
   errorMsg?: string;
@@ -28,6 +29,7 @@ export function render(input: RenderInput): void {
     pollingIntervalMs,
     tradeAmount,
     minProfitThreshold,
+    minReserveA,
     lastUpdate,
     tickMs,
     errorMsg,
@@ -37,19 +39,22 @@ export function render(input: RenderInput): void {
 
   const elapsed = Math.floor((Date.now() - ctx.startedAt) / 1000);
   const updatedStr = new Date(lastUpdate).toISOString().replace('T', ' ').replace(/\..+/, '');
+  const demoTag = ctx.demo ? chalk.cyan.bold('[DEMO] ') : '';
+  const rpcDisplay = ctx.demo ? chalk.cyan('demo mode — no RPC required') : truncate(rpcEndpoint, 55);
 
   console.log(
-    chalk.bold.cyan('  Raydium CPMM Arbitrage Monitor  ') +
-      chalk.dim(` v0.1.0  iteration #${ctx.iteration}  uptime ${elapsed}s  scan ${tickMs}ms`)
+    demoTag +
+    chalk.bold.cyan('Raydium CPMM Arbitrage Monitor  ') +
+      chalk.dim(`v0.1.0  iteration #${ctx.iteration}  uptime ${elapsed}s  scan ${tickMs}ms`)
   );
   console.log(
     chalk.dim(`  Pair: ${shortPub(ctx.mintA.toBase58())} / ${shortPub(ctx.mintB.toBase58())}`) +
       chalk.dim(`   Pools: ${ctx.pools.length}   Updated: ${updatedStr}`)
   );
   console.log(
-    chalk.dim(`  Polling: ${pollingIntervalMs}ms   Trade size: ${tradeAmount}   Min profit: ${minProfitThreshold}`)
+    chalk.dim(`  Polling: ${pollingIntervalMs}ms   Trade size: ${tradeAmount}   Min profit: ${minProfitThreshold}   Min reserve: ${minReserveA}`)
   );
-  console.log(chalk.dim(`  RPC: ${truncate(rpcEndpoint, 60)}`));
+  console.log(chalk.dim(`  RPC: ${rpcDisplay}`));
   console.log('');
 
   if (errorMsg) {
@@ -57,21 +62,19 @@ export function render(input: RenderInput): void {
     console.log('');
   }
 
-  renderPriceTable(prices);
+  renderPriceTable(prices, minReserveA);
   console.log('');
   renderArbTable(opportunities, minProfitThreshold);
   console.log('');
   console.log(chalk.dim('  Ctrl+C to exit. Logs streamed to file (see LOG_FILE).'));
 }
 
-function renderPriceTable(prices: PriceSnapshot[]): void {
+function renderPriceTable(prices: PriceSnapshot[], minReserveA: number): void {
   console.log(chalk.bold('  Pool Prices'));
   if (prices.length === 0) {
     console.log(chalk.yellow('  No pool prices available.'));
     return;
   }
-
-  const LOW_LIQ_THRESHOLD = 0.1;
 
   const table = new Table({
     head: [
@@ -88,11 +91,17 @@ function renderPriceTable(prices: PriceSnapshot[]): void {
 
   const sorted = [...prices].sort((a, b) => a.spotPrice - b.spotPrice);
   for (const p of sorted) {
-    const lowLiq = p.reserveA < LOW_LIQ_THRESHOLD;
-    const liqLabel = lowLiq ? chalk.red('LOW') : chalk.green('OK');
+    const lowLiq = p.reserveA < 0.1;
+    const excluded = p.excludedFromArb;
+    const liqLabel = excluded
+      ? chalk.red('LOW') + chalk.dim(' excl')
+      : lowLiq
+      ? chalk.red('LOW')
+      : chalk.green('OK');
+    const dimRow = excluded || lowLiq;
     const row = [
-      lowLiq ? chalk.dim(p.poolIdShort) : p.poolIdShort,
-      lowLiq ? chalk.dim(formatPrice(p.spotPrice)) : formatPrice(p.spotPrice),
+      dimRow ? chalk.dim(p.poolIdShort) : p.poolIdShort,
+      dimRow ? chalk.dim(formatPrice(p.spotPrice)) : formatPrice(p.spotPrice),
       formatNum(p.reserveA),
       formatNum(p.reserveB),
       liqLabel,
@@ -101,6 +110,10 @@ function renderPriceTable(prices: PriceSnapshot[]): void {
     table.push(row);
   }
   console.log(table.toString());
+  const excluded = prices.filter((p) => p.excludedFromArb).length;
+  if (excluded > 0) {
+    console.log(chalk.dim(`  ${excluded} pool(s) excluded from arb (reserveA < ${minReserveA}). Price shown for reference only.`));
+  }
 }
 
 function renderArbTable(opps: ArbOpportunity[], threshold: number): void {
@@ -108,6 +121,9 @@ function renderArbTable(opps: ArbOpportunity[], threshold: number): void {
 
   if (opps.length === 0) {
     console.log(chalk.yellow('  No profitable arbitrage detected (after fees).'));
+    console.log(chalk.dim('  → On liquid pairs (SOL/USDC), MEV bots close spreads in <100ms.'));
+    console.log(chalk.dim('  → Try newly-launched or low-liquidity CPMM pairs for real opportunities.'));
+    console.log(chalk.dim('  → Run with --demo to see sample output with simulated opportunities.'));
     return;
   }
 

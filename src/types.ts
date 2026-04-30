@@ -40,6 +40,7 @@ export interface PriceSnapshot {
   reserveB: number;
   feeRatePercent: number;
   timestamp: number;
+  excludedFromArb: boolean;
 }
 
 export interface ArbOpportunity {
@@ -70,4 +71,11 @@ export interface MonitorContext {
   configs: Map<string, AmmConfig>;
   startedAt: number;
   iteration: number;
+  demo: boolean;
+}
+
+export interface ParsedArgs {
+  mintA: PublicKey;
+  mintB: PublicKey;
+  demo: boolean;
 }
