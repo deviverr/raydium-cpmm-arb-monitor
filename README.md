@@ -1,6 +1,6 @@
 # raydium-cpmm-arb-monitor
 
-![Arbitrage Monitor Screenshot](Знімок%20екрана%202026-04-29%20235539.png)
+![Arbitrage Monitor — Demo Mode](screenshot-01-05-26.png)
 
 A real-time arbitrage monitoring tool for [Raydium CPMM](https://docs.raydium.io/raydium/build/developer-guides/cpmm) pools on Solana.
 
@@ -112,6 +112,8 @@ npm run dev:demo
 ```
 
 That's it. No `.env`, no API key, no on-chain calls. Runs 3 synthetic CPMM pools with a clear price spread and shows profitable arbitrage opportunities with all columns populated.
+
+![Demo mode — 3 profitable opportunities in green](screenshot-01-05-26.png)
 
 ### Live mainnet monitoring
 
