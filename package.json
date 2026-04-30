@@ -10,8 +10,8 @@
     "build": "tsc",
     "start": "node --no-warnings dist/index.js",
     "demo": "node --no-warnings dist/index.js --demo",
-    "dev": "ts-node --node-options=\"--no-warnings\" src/index.ts",
-    "dev:demo": "ts-node --node-options=\"--no-warnings\" src/index.ts --demo",
+    "dev": "ts-node src/index.ts",
+    "dev:demo": "ts-node src/index.ts --demo",
     "clean": "rimraf dist",
     "test": "jest --testPathPattern=tests/.*\\.test\\.ts"
   },
