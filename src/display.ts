@@ -11,6 +11,7 @@ export interface RenderInput {
   tradeAmount: number;
   minProfitThreshold: number;
   lastUpdate: number;
+  tickMs: number;
   errorMsg?: string;
 }
 
@@ -28,6 +29,7 @@ export function render(input: RenderInput): void {
     tradeAmount,
     minProfitThreshold,
     lastUpdate,
+    tickMs,
     errorMsg,
   } = input;
 
@@ -38,7 +40,7 @@ export function render(input: RenderInput): void {
 
   console.log(
     chalk.bold.cyan('  Raydium CPMM Arbitrage Monitor  ') +
-      chalk.dim(` v0.1.0  iteration #${ctx.iteration}  uptime ${elapsed}s`)
+      chalk.dim(` v0.1.0  iteration #${ctx.iteration}  uptime ${elapsed}s  scan ${tickMs}ms`)
   );
   console.log(
     chalk.dim(`  Pair: ${shortPub(ctx.mintA.toBase58())} / ${shortPub(ctx.mintB.toBase58())}`) +
@@ -114,12 +116,11 @@ function renderArbTable(opps: ArbOpportunity[], threshold: number): void {
       chalk.bold('#'),
       chalk.bold('Buy Pool'),
       chalk.bold('Sell Pool'),
-      chalk.bold('Buy Price'),
-      chalk.bold('Sell Price'),
       chalk.bold('Spread %'),
-      chalk.bold('Gross'),
-      chalk.bold('Tx Cost'),
+      chalk.bold('Impact'),
       chalk.bold('Net Profit'),
+      chalk.bold('Optimal Size'),
+      chalk.bold('Optimal Profit'),
     ],
     style: { head: [], border: ['gray'] },
     chars: cleanBorder(),
@@ -127,31 +128,37 @@ function renderArbTable(opps: ArbOpportunity[], threshold: number): void {
 
   const top = opps.slice(0, 10);
   for (const o of top) {
-    const netStr = formatProfit(o.netProfit);
     const colorize = o.meetsThreshold
       ? chalk.green
       : o.netProfit > 0
       ? chalk.yellow
       : chalk.gray;
+    const impactStr = o.highImpactWarning
+      ? chalk.red(`${o.priceImpactPct.toFixed(1)}% ⚠`)
+      : chalk.dim(`${o.priceImpactPct.toFixed(1)}%`);
+    const optProfit = o.optimalNetProfit > 0
+      ? chalk.cyan(formatProfit(o.optimalNetProfit))
+      : chalk.dim('—');
+    const optSize = o.optimalTradeAmount > 0
+      ? chalk.dim(formatNum(o.optimalTradeAmount))
+      : chalk.dim('—');
     table.push([
       colorize(String(o.rank)),
       colorize(o.buyPoolShort),
       colorize(o.sellPoolShort),
-      formatPrice(o.buyPrice),
-      formatPrice(o.sellPrice),
       colorize(`${o.priceDiffPercent.toFixed(4)}%`),
-      formatProfit(o.grossProfit),
-      o.txCost.toFixed(8),
-      colorize(netStr),
+      impactStr,
+      colorize(formatProfit(o.netProfit)),
+      optSize,
+      optProfit,
     ]);
   }
   console.log(table.toString());
   const aboveThreshold = opps.filter((o) => o.meetsThreshold).length;
-  console.log(
-    chalk.dim(
-      `  ${opps.length} opportunit${opps.length === 1 ? 'y' : 'ies'} found, ${aboveThreshold} above threshold (${threshold})`
-    )
-  );
+  const withWarning = opps.filter((o) => o.highImpactWarning).length;
+  let summary = `  ${opps.length} opportunit${opps.length === 1 ? 'y' : 'ies'} found, ${aboveThreshold} above threshold (${threshold})`;
+  if (withWarning > 0) summary += chalk.red(`  ${withWarning} high price-impact ⚠`);
+  console.log(chalk.dim(summary));
 }
 
 function shortPub(addr: string): string {

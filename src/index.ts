@@ -59,6 +59,7 @@ async function main(): Promise<void> {
 
   let lastPrices: PriceSnapshot[] = [];
   let lastOpps: ArbOpportunity[] = [];
+  let lastTickMs = 0;
   let lastError: string | undefined;
 
   // Switch console logger off; the TUI owns stdout from here on.
@@ -89,7 +90,8 @@ async function main(): Promise<void> {
       });
 
       const profitable = lastOpps.filter((o) => o.meetsThreshold);
-      const tickMs = Date.now() - startedTick;
+      lastTickMs = Date.now() - startedTick;
+      const tickMs = lastTickMs;
       logger.info('Price update', {
         iteration: ctx.iteration,
         durationMs: tickMs,
@@ -103,6 +105,20 @@ async function main(): Promise<void> {
         })),
         opportunitiesFound: lastOpps.length,
         aboveThreshold: profitable.length,
+      });
+      lastOpps.forEach((o) => {
+        logger.debug('Arb candidate', {
+          rank: o.rank,
+          buyPool: o.buyPool,
+          sellPool: o.sellPool,
+          spread: `${o.priceDiffPercent.toFixed(4)}%`,
+          priceImpact: `${o.priceImpactPct.toFixed(2)}%`,
+          highImpact: o.highImpactWarning,
+          netProfit: o.netProfit,
+          optimalTradeAmount: o.optimalTradeAmount,
+          optimalNetProfit: o.optimalNetProfit,
+          meetsThreshold: o.meetsThreshold,
+        });
       });
       if (profitable.length > 0) {
         const top = profitable[0];
@@ -132,6 +148,7 @@ async function main(): Promise<void> {
       tradeAmount: config.tradeAmount,
       minProfitThreshold: config.minProfitThreshold,
       lastUpdate: Date.now(),
+      tickMs: lastTickMs,
       errorMsg: lastError,
     });
   };

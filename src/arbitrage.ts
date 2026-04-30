@@ -5,6 +5,9 @@ import { bnToNumber, shortAddr } from './price';
 
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
+const HIGH_IMPACT_THRESHOLD = 0.1; // warn if trade > 10% of buy-pool reserve
+const OPTIMAL_SEARCH_STEPS = 40;   // binary search iterations
+
 export interface ArbInput {
   reserves: PoolReserves[];
   tradeAmount: number;
@@ -77,11 +80,21 @@ function simulateArb(
   const grossProfit = amountOutA - tradeAmountInputToken;
   const netProfit = grossProfit - txCostInputToken;
 
-  // Price spread as a positive percentage: how much better the buy-pool rate is vs sell-pool.
-  // buyPrice (B/A) > sellPrice (B/A) means profitable: spend A in buyPool to get more B,
-  // then reclaim more A from sellPool. Spread = (buyPrice - sellPrice) / sellPrice * 100.
+  // Price spread: buyPool B/A > sellPool B/A means profitable. Positive = good.
   const priceDiffPercent =
     sellPrice > 0 ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
+
+  // Price impact: how much of the buy-pool's reserve the trade consumes.
+  const priceImpactPct = buyResA > 0 ? (tradeAmountInputToken / buyResA) * 100 : 0;
+  const highImpactWarning = priceImpactPct > HIGH_IMPACT_THRESHOLD * 100;
+
+  // Optimal trade size: binary search for argmax(netProfit) over [0, 30% of buy reserve]
+  const maxSearch = Math.min(buyResA, sellResA) * 0.3;
+  const { optimalAmount, optimalProfit } = findOptimalTradeSize(
+    buyResA, buyResB, sellResA, sellResB,
+    buyFeeFraction, sellFeeFraction,
+    txCostInputToken, maxSearch
+  );
 
   return {
     rank: 0,
@@ -98,6 +111,63 @@ function simulateArb(
     netProfit,
     profitable: netProfit > 0,
     meetsThreshold: false,
+    priceImpactPct,
+    highImpactWarning,
+    optimalTradeAmount: optimalAmount,
+    optimalNetProfit: optimalProfit,
+  };
+}
+
+function swapNetProfit(
+  x: number,
+  buyResA: number, buyResB: number,
+  sellResA: number, sellResB: number,
+  buyFee: number, sellFee: number,
+  txCost: number
+): number {
+  const inAfterFee1 = x * (1 - buyFee);
+  const outB = buyResA + inAfterFee1 > 0
+    ? (buyResB * inAfterFee1) / (buyResA + inAfterFee1)
+    : 0;
+  const inAfterFee2 = outB * (1 - sellFee);
+  const outA = sellResB + inAfterFee2 > 0
+    ? (sellResA * inAfterFee2) / (sellResB + inAfterFee2)
+    : 0;
+  return outA - x - txCost;
+}
+
+function findOptimalTradeSize(
+  buyResA: number, buyResB: number,
+  sellResA: number, sellResB: number,
+  buyFee: number, sellFee: number,
+  txCost: number,
+  maxSize: number
+): { optimalAmount: number; optimalProfit: number } {
+  if (maxSize <= 0) return { optimalAmount: 0, optimalProfit: 0 };
+
+  // Ternary search on a unimodal concave profit function
+  let lo = 0;
+  let hi = maxSize;
+  for (let i = 0; i < OPTIMAL_SEARCH_STEPS; i++) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    const p1 = swapNetProfit(m1, buyResA, buyResB, sellResA, sellResB, buyFee, sellFee, txCost);
+    const p2 = swapNetProfit(m2, buyResA, buyResB, sellResA, sellResB, buyFee, sellFee, txCost);
+    if (p1 < p2) {
+      lo = m1;
+    } else {
+      hi = m2;
+    }
+  }
+
+  const optimalAmount = (lo + hi) / 2;
+  const optimalProfit = swapNetProfit(
+    optimalAmount, buyResA, buyResB, sellResA, sellResB, buyFee, sellFee, txCost
+  );
+
+  return {
+    optimalAmount: optimalProfit > 0 ? optimalAmount : 0,
+    optimalProfit: Math.max(0, optimalProfit),
   };
 }
 

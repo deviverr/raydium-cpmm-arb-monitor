@@ -57,6 +57,10 @@ export interface ArbOpportunity {
   netProfit: number;
   profitable: boolean;
   meetsThreshold: boolean;
+  priceImpactPct: number;
+  highImpactWarning: boolean;
+  optimalTradeAmount: number;
+  optimalNetProfit: number;
 }
 
 export interface MonitorContext {

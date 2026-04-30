@@ -57,18 +57,67 @@ export function loadConfig(): AppConfig {
 }
 
 export function parseMintArgs(argv: string[]): { mintA: PublicKey; mintB: PublicKey } {
-  if (argv.length < 2) {
-    throw new Error(
-      'Usage: raydium-arb-monitor <mintA> <mintB>\n' +
-        'Example: raydium-arb-monitor So11111111111111111111111111111111111111112 EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-    );
+  if (argv.includes('--help') || argv.includes('-h')) {
+    printHelp();
+    process.exit(0);
   }
+
+  if (argv.length < 2) {
+    printHelp();
+    process.exit(1);
+  }
+
   try {
     return {
       mintA: new PublicKey(argv[0]),
       mintB: new PublicKey(argv[1]),
     };
   } catch (e) {
-    throw new Error(`Invalid mint address: ${(e as Error).message}`);
+    console.error(`Error: invalid mint address — ${(e as Error).message}\n`);
+    printHelp();
+    process.exit(1);
   }
+}
+
+function printHelp(): void {
+  console.log(`
+raydium-cpmm-arb-monitor  v0.1.0
+Real-time arbitrage monitoring tool for Raydium CPMM pools on Solana.
+
+Usage:
+  npm run dev -- <mintA> <mintB>
+  node dist/index.js <mintA> <mintB>
+  node dist/index.js --help
+
+Arguments:
+  mintA    SPL token mint address — input/output token of the simulated arbitrage
+  mintB    SPL token mint address — intermediate token
+
+Common pairs:
+  SOL/USDC    So11111111111111111111111111111111111111112
+              EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+
+  POPCAT/SOL  7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr
+              So11111111111111111111111111111111111111112
+
+  WIF/SOL     EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm
+              So11111111111111111111111111111111111111112
+
+  JUP/SOL     JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN
+              So11111111111111111111111111111111111111112
+
+Configuration (.env):
+  RPC_ENDPOINT           Solana RPC endpoint  [required — Helius recommended]
+  POLLING_INTERVAL_MS    Refresh interval ms  [default: 5000, min: 500]
+  MIN_PROFIT_THRESHOLD   Min net profit to flag green  [default: 0.0001]
+  TRADE_AMOUNT           Notional trade size in mintA units  [default: 1]
+  TX_COST_LAMPORTS       Estimated 2-leg arb tx cost in lamports  [default: 10000]
+  LOG_LEVEL              info | warn | error | debug  [default: info]
+  LOG_FILE               Log file path  [default: arb-monitor.log]
+
+Run tests:
+  npm test
+
+See README.md for full documentation.
+`);
 }
