@@ -293,6 +293,19 @@ The simulator considers **all ordered pool combinations**, so a 3-pool universe 
 
 Opportunities are sorted by `net_profit` descending. The top 10 are displayed. An opportunity is **above threshold** when `net_profit >= MIN_PROFIT_THRESHOLD`; only those trigger a `warn`-level log entry.
 
+### Why "No profitable arbitrage detected"?
+
+This is the **expected result for arb-efficient pairs** like SOL/USDC. Dozens of MEV bots and arbitrageurs continuously exploit price differences between Raydium CPMM pools within milliseconds of them appearing. By the time this tool polls (every 5 seconds by default), any meaningful spread has already been closed.
+
+This does **not** mean the tool is broken — it means the market is efficient for that pair. The tool is most useful for:
+
+- **Less-liquid or newly-launched token pairs** where arb bots have not yet optimized coverage.
+- **Wider polling intervals** that let discrepancies accumulate before capture.
+- **Very small `TRADE_AMOUNT`** to detect micro-inefficiencies below bot profitability thresholds.
+- **Pool liquidity monitoring** — pools flagged `LOW` in the Liq. column have stale prices that don't reflect true market value.
+
+Try pairs like `POPCAT/SOL`, `WIF/SOL`, or newly-launched tokens where CPMM pools are primary liquidity venues. See `tests/` for ready-to-run examples.
+
 ---
 
 ## Logging & Observability

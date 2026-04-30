@@ -89,12 +89,20 @@ async function main(): Promise<void> {
       });
 
       const profitable = lastOpps.filter((o) => o.meetsThreshold);
-      logger.debug('Tick complete', {
+      const tickMs = Date.now() - startedTick;
+      logger.info('Price update', {
         iteration: ctx.iteration,
-        durationMs: Date.now() - startedTick,
-        pools: pools.length,
-        opps: lastOpps.length,
-        opportunitiesAboveThreshold: profitable.length,
+        durationMs: tickMs,
+        pools: lastPrices.length,
+        prices: lastPrices.map((p) => ({
+          pool: p.poolIdShort,
+          spotPrice: Number(p.spotPrice.toFixed(8)),
+          reserveA: Number(p.reserveA.toFixed(4)),
+          reserveB: Number(p.reserveB.toFixed(4)),
+          feePercent: p.feeRatePercent.toFixed(3),
+        })),
+        opportunitiesFound: lastOpps.length,
+        aboveThreshold: profitable.length,
       });
       if (profitable.length > 0) {
         const top = profitable[0];

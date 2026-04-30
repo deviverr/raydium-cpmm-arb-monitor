@@ -69,12 +69,15 @@ function renderPriceTable(prices: PriceSnapshot[]): void {
     return;
   }
 
+  const LOW_LIQ_THRESHOLD = 0.1;
+
   const table = new Table({
     head: [
       chalk.bold('Pool'),
       chalk.bold('Spot Price (B per A)'),
       chalk.bold('Reserve A'),
       chalk.bold('Reserve B'),
+      chalk.bold('Liq.'),
       chalk.bold('Fee'),
     ],
     style: { head: [], border: ['gray'] },
@@ -83,13 +86,17 @@ function renderPriceTable(prices: PriceSnapshot[]): void {
 
   const sorted = [...prices].sort((a, b) => a.spotPrice - b.spotPrice);
   for (const p of sorted) {
-    table.push([
-      p.poolIdShort,
-      formatPrice(p.spotPrice),
+    const lowLiq = p.reserveA < LOW_LIQ_THRESHOLD;
+    const liqLabel = lowLiq ? chalk.red('LOW') : chalk.green('OK');
+    const row = [
+      lowLiq ? chalk.dim(p.poolIdShort) : p.poolIdShort,
+      lowLiq ? chalk.dim(formatPrice(p.spotPrice)) : formatPrice(p.spotPrice),
       formatNum(p.reserveA),
       formatNum(p.reserveB),
+      liqLabel,
       `${p.feeRatePercent.toFixed(3)}%`,
-    ]);
+    ];
+    table.push(row);
   }
   console.log(table.toString());
 }
@@ -109,7 +116,7 @@ function renderArbTable(opps: ArbOpportunity[], threshold: number): void {
       chalk.bold('Sell Pool'),
       chalk.bold('Buy Price'),
       chalk.bold('Sell Price'),
-      chalk.bold('Diff %'),
+      chalk.bold('Spread %'),
       chalk.bold('Gross'),
       chalk.bold('Tx Cost'),
       chalk.bold('Net Profit'),

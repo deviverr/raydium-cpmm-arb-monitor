@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "test": "jest --testPathPattern=tests/.*\\.test\\.ts"
   },
   "keywords": [
     "solana",
@@ -35,10 +36,18 @@
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.5",
+    "@types/jest": "^29.5.12",
     "@types/node": "^20.14.10",
+    "jest": "^29.7.0",
     "rimraf": "^5.0.9",
+    "ts-jest": "^29.1.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": ["<rootDir>/tests"]
   },
   "engines": {
     "node": ">=18.0.0"

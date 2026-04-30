@@ -77,7 +77,11 @@ function simulateArb(
   const grossProfit = amountOutA - tradeAmountInputToken;
   const netProfit = grossProfit - txCostInputToken;
 
-  const priceDiffPercent = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0;
+  // Price spread as a positive percentage: how much better the buy-pool rate is vs sell-pool.
+  // buyPrice (B/A) > sellPrice (B/A) means profitable: spend A in buyPool to get more B,
+  // then reclaim more A from sellPool. Spread = (buyPrice - sellPrice) / sellPrice * 100.
+  const priceDiffPercent =
+    sellPrice > 0 ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
 
   return {
     rank: 0,
