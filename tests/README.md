@@ -1,20 +1,26 @@
 # tests/ — quick test harness
 
-Scripts to run `raydium-cpmm-arb-monitor` against various live token pairs without manually typing mint addresses each time.
+Scripts to run `raydium-cpmm-arb-monitor` against demo data or live token pairs.
+
+## No-setup demo (start here)
+
+No RPC key or `.env` required:
+
+```bash
+# bash / git bash:
+bash tests/run-demo.sh
+
+# Windows cmd:
+tests\run-demo.cmd
+```
+
+Shows 3 synthetic pools with profitable arb opportunities in green. Good for verifying the tool works before getting an RPC key.
+
+## Live pairs (requires RPC key)
 
 > **Note:** `tests/.env.test` contains a real RPC API key and is gitignored. Keep it local.
 
-## One-time setup
-
-From the project root:
-
-```bash
-# 1. Install deps + build (only needed once)
-npm install
-npm run build
-```
-
-Then copy the prebuilt env file to project root:
+From the project root, copy the env file first:
 
 ```bash
 # bash / git bash / mac / linux:
@@ -24,14 +30,11 @@ bash tests/setup.sh
 tests\setup.cmd
 ```
 
-This copies `tests/.env.test` → `.env` so the tool can read your RPC endpoint.
-
-## Run a test
-
-Each script runs the monitor on a different token pair. Pick one:
+Then run any pair:
 
 | Script              | Pair         | Notes                                          |
 | ------------------- | ------------ | ---------------------------------------------- |
+| `run-demo.sh`       | Synthetic    | No RPC key needed. 3 pools, green arb rows.    |
 | `run-sol-usdc.sh`   | SOL / USDC   | Many CPMM pools, mostly small liquidity.       |
 | `run-popcat-sol.sh` | POPCAT / SOL | Active memecoin pair.                          |
 | `run-wif-sol.sh`    | WIF / SOL    | dogwifhat memecoin.                            |

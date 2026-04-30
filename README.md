@@ -100,58 +100,65 @@ The tick loop runs every `POLLING_INTERVAL_MS`. The TUI is rendered after each t
 
 ---
 
+## Quick Start
+
+### Zero-config demo (no RPC key needed)
+
+```bash
+git clone https://github.com/deviverr/raydium-cpmm-arb-monitor.git
+cd raydium-cpmm-arb-monitor
+npm install
+npm run dev:demo
+```
+
+That's it. No `.env`, no API key, no on-chain calls. Runs 3 synthetic CPMM pools with a clear price spread and shows profitable arbitrage opportunities with all columns populated.
+
+### Live mainnet monitoring
+
+```bash
+cp .env.example .env
+# Set RPC_ENDPOINT in .env (get a free key at https://helius.dev)
+npm run dev -- So11111111111111111111111111111111111111112 EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+The first argument is **tokenA** (input/output token). The second is **tokenB** (intermediate token).
+
+The simulated trade flow:
+
+```
+tradeAmount of tokenA  →  buyPool  →  tokenB  →  sellPool  →  tokenA
+                                                              ↑
+                                                  hopefully more than you started with
+```
+
+---
+
 ## Installation
 
 ### Prerequisites
 
 - **Node.js ≥ 18** (Node 20 LTS recommended)
 - **npm** or **pnpm** or **yarn**
-- A Solana RPC endpoint. Public mainnet RPC (`https://api.mainnet-beta.solana.com`) is rate-limited and **will not work reliably** for `getProgramAccounts` queries. Use a paid provider — [Helius](https://helius.dev) (recommended), [QuickNode](https://www.quicknode.com), or [Triton](https://triton.one).
+- For live monitoring: a Solana RPC endpoint. Public mainnet (`https://api.mainnet-beta.solana.com`) is rate-limited and blocks `getProgramAccounts`. Use [Helius](https://helius.dev) (free tier), [QuickNode](https://www.quicknode.com), or [Triton](https://triton.one).
 
 ### Setup
 
 ```bash
-git clone https://github.com/<your-username>/raydium-cpmm-arb-monitor.git
+git clone https://github.com/deviverr/raydium-cpmm-arb-monitor.git
 cd raydium-cpmm-arb-monitor
 npm install
-cp .env.example .env
-# edit .env with your RPC endpoint
-npm run build
-```
 
-To run from source without building:
+# Demo mode — no config needed:
+npm run dev:demo
 
-```bash
+# Live mode — add your RPC key first:
+cp .env.example .env   # then edit RPC_ENDPOINT
 npm run dev -- <mintA> <mintB>
-```
 
-To run the compiled binary:
-
-```bash
+# Or build and run compiled binary:
 npm run build
+node dist/index.js --demo
 node dist/index.js <mintA> <mintB>
-```
-
----
-
-## Quick Start
-
-Monitor SOL/USDC arbitrage opportunities across all Raydium CPMM pools:
-
-```bash
-npm run dev -- \
-  So11111111111111111111111111111111111111112 \
-  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
-```
-
-The first argument is **tokenA** (input/output token of the simulated arbitrage). The second is **tokenB** (intermediate token).
-
-The simulated trade flow is:
-
-```
-tradeAmount of tokenA  →  buyPool  →  tokenB  →  sellPool  →  tokenA
-                                                              ↑
-                                                  hopefully more than you started with
 ```
 
 ---
